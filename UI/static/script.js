@@ -387,6 +387,7 @@ document.addEventListener('DOMContentLoaded', function() {
         isConnected = true;
         updateConnectionStatus(isConnected);
         appendToTerminal('Connected to device.');
+        loadWelcomeMessage();
     };
 
     uartConnection.onmessage = (event) => {
@@ -1739,7 +1740,7 @@ function initUART() {
 }
 
 function loadWelcomeMessage() {
-    fetch('UI/static/welcome_msg.txt')
+    fetch('/static/welcome_msg.txt')
         .then(response => response.text())
         .then(data => {
             appendToTerminal(data);

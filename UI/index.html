@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evil BW16 Web Interface</title>
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="/static/logo.png" type="image/x-icon">
+    <style>
+        .hamburger-menu {
+            width: 30px;
+            height: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .hamburger-menu span {
+            width: 100%;
+            height: 3px;
+            background-color: #333;
+            border-radius: 2px;
+        }
+
+        /* Dark Futuristic Sniffing Indicator */
+        #sniffingIndicator {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-150%) scale(0.9);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.95), rgba(20, 20, 20, 0.95));
+            border-radius: 15px;
+            padding: 15px 25px;
+            color: #ffffff;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            pointer-events: none;
+            opacity: 0;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.5),
+                        inset 0 0 15px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        #sniffingIndicator::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, 
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            border-radius: 15px 15px 0 0;
+        }
+
+        #sniffingIndicator.show {
+            transform: translateX(-50%) translateY(10px) scale(1);
+            opacity: 1;
+        }
+
+        #sniffingIndicator .attack-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            min-width: 280px;
+            justify-content: flex-start;
+            position: relative;
+            padding: 0 10px;
+        }
+
+        #sniffingIndicator .attack-icon {
+            font-size: 1.25rem;
+            position: relative;
+            color: #ffffff;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        #sniffingIndicator .attack-icon::after {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            animation: borderRotate 4s linear infinite;
+        }
+
+        #sniffingIndicator .attack-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+            white-space: nowrap;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            position: relative;
+            padding-left: 15px;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Hexagonal Background Pattern */
+        .hex-pattern {
+            position: absolute;
+            inset: 0;
+            opacity: 0.1;
+            overflow: hidden;
+            pointer-events: none;
+            border-radius: 15px;
+        }
+
+        .hex-pattern::before {
+            content: '';
+            position: absolute;
+            inset: -50%;
+            background-image: 
+                linear-gradient(0deg, transparent 24%, 
+                    rgba(255, 255, 255, 0.3) 25%, 
+                    rgba(255, 255, 255, 0.3) 26%, 
+                    transparent 27%, transparent 74%,
+                    rgba(255, 255, 255, 0.3) 75%,
+                    rgba(255, 255, 255, 0.3) 76%, 
+                    transparent 77%, transparent),
+                linear-gradient(90deg, transparent 24%, 
+                    rgba(255, 255, 255, 0.3) 25%, 
+                    rgba(255, 255, 255, 0.3) 26%, 
+                    transparent 27%, transparent 74%,
+                    rgba(255, 255, 255, 0.3) 75%,
+                    rgba(255, 255, 255, 0.3) 76%, 
+                    transparent 77%, transparent);
+            background-size: 30px 30px;
+            animation: hexMove 3s linear infinite;
+        }
+
+        /* Scan Line */
+        .scan-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg,
+                transparent,
+                rgba(255, 255, 255, 0.8),
+                transparent
+            );
+            filter: blur(1px);
+            animation: scanUp 2s ease-in-out infinite;
+            opacity: 0.5;
+        }
+
+        /* Status Indicator */
+        .status-indicator {
+            position: absolute;
+            right: -2px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 70%;
+            background: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            border-radius: 2px;
+        }
+
+        .status-indicator::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 20%;
+            background: #ffffff;
+            animation: statusMove 1.5s ease-in-out infinite;
+        }
+
+        /* Data Stream Effect */
+        .data-stream {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg,
+                transparent,
+                rgba(255, 255, 255, 0.5),
+                transparent
+            );
+            animation: dataStream 1s linear infinite;
+            border-radius: 0 0 15px 15px;
+        }
+
+        @keyframes scanUp {
+            0%, 100% { top: 0; }
+            50% { top: 100%; }
+        }
+
+        @keyframes statusMove {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(500%); }
+        }
+
+        @keyframes hexMove {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(30px); }
+        }
+
+        @keyframes borderRotate {
+            0% { clip-path: inset(0 0 95% 0); }
+            25% { clip-path: inset(0 95% 0 0); }
+            50% { clip-path: inset(95% 0 0 0); }
+            75% { clip-path: inset(0 0 0 95%); }
+            100% { clip-path: inset(0 0 95% 0); }
+        }
+
+        @keyframes dataStream {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+        }
+
+        /* Progress Bar */
+        .progress-track {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 0 0 12px 12px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            width: 0%;
+            animation: progressScan 2s ease-in-out infinite;
+        }
+
+        @keyframes progressScan {
+            0% { width: 0%; }
+            50% { width: 100%; }
+            100% { width: 0%; }
+        }
+
+        @keyframes particleFlow {
+            0% {
+                transform: translateX(-10px) scale(1);
+                opacity: 0;
+            }
+            50% {
+                transform: translateX(120px) scale(1.2);
+                opacity: 1;
+            }
+            100% {
+                transform: translateX(250px) scale(1);
+                opacity: 0;
+            }
+        }
+
+        /* Status Dot */
+        .status-dot {
+            position: absolute;
+            right: -8px;
+            top: -8px;
+            width: 8px;
+            height: 8px;
+            background: #6366f1;
+            border-radius: 50%;
+            box-shadow: 0 0 0 2px rgba(17, 23, 35, 0.85);
+            animation: statusPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes statusPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Banner -->
+    <nav class="navbar navbar-dark fixed-top">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center">
+                <a class="navbar-brand d-flex align-items-center" href="#">
+                    <img src="/static/logo.png" alt="Logo" class="me-2" height="35">
+                    Evil BW16 Web
+                    <span class="version-badge ms-2">v1.0</span>
+                </a>
+            </div>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-link text-dark me-3 theme-toggle" title="Toggle theme">
+                    <i class="bi bi-moon-stars"></i>
+                </button>
+                <button class="btn btn-link text-dark me-3" id="terminal-toggle" onclick="toggleTerminal()">
+                    <i class="bi bi-terminal fs-5"></i>
+                </button>
+                <button class="btn btn-link text-dark" onclick="toggleSettings()">
+                    <i class="bi bi-gear fs-5"></i>
+                </button>
+                <div id="connection-status" class="badge bg-danger ms-3">Disconnected</div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Sidebar and Main Content -->
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="active">
+            <div class="nav-section-title">Overview</div>
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link active" href="#dashboard">
+                        <i class="bi bi-wifi"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#logs" data-bs-toggle="tooltip" data-bs-placement="right" title="Logs">
+                        <i class="bi bi-journal-text"></i>
+                        <span class="link-text">Logs</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#sniffmaster" class="nav-link" data-bs-toggle="tooltip" data-bs-placement="right" title="SniffMaster">
+                        <i class="bi bi-reception-4"></i>
+                        <span class="link-text">SniffMaster</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <div id="content">
+            <div class="container-fluid mt-4">
+                <div id="dashboard-content">
+                    <!-- Connection Section -->
+                    <div class="row g-4">
+                        <!-- Quick Actions -->
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Quick Actions</h5>
+                                    <div class="quick-actions">
+                                        <div class="row g-3">
+                                            <div class="col">
+                                                <button class="btn btn-dark w-100 text-start px-2 py-2" onclick="handleQuickAction('scan')" id="scanBtn">
+                                                    <i class="bi bi-wifi me-2"></i>
+                                                    Scan
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button class="btn btn-dark w-100 text-start px-2 py-2" onclick="handleQuickAction('start')" id="startBtn">
+                                                    <i class="bi bi-play-fill me-2"></i>
+                                                    Deauth
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button class="btn btn-dark w-100 text-start px-2 py-2" onclick="handleQuickAction('disassoc')" id="disassocBtn">
+                                                    <i class="bi bi-x-circle me-2"></i>
+                                                    Disassoc
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button class="btn btn-dark w-100 text-start px-2 py-2" onclick="handleQuickAction('random')" id="randomBtn">
+                                                    <i class="bi bi-shuffle me-2"></i>
+                                                    Random
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button class="btn btn-dark w-100 text-start px-2 py-2" onclick="handleQuickAction('stop')" id="stopBtn">
+                                                    <i class="bi bi-stop-fill me-2"></i>
+                                                    Stop
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button class="btn btn-dark w-100 text-start px-2 py-2" onclick="handleQuickAction('help')" id="helpBtn">
+                                                    <i class="bi bi-question-circle me-2"></i>
+                                                    Help
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button class="btn btn-light w-100 text-start px-2 py-2" onclick="handleQuickAction('results')" id="resultsBtn">
+                                                    <i class="bi bi-clipboard-data me-2"></i>
+                                                    Results
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button id="randomAttackBtn" class="btn btn-dark w-100 text-start px-2 py-2">
+                                                    <i class="bi bi-lightning-fill me-2"></i>
+                                                    Random Attack
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <input type="number" id="attackTimeInput" class="form-control bg-dark text-light" placeholder="Attack Time (ms)">
+                                                Attack Time (ms)
+                                            </div>
+                                            <div class="col">
+                                                <input type="text" id="targetInput" class="form-control bg-dark text-light" placeholder="Set Target">
+                                                Set Target(s)
+                                            </div>
+                                            <div class="col">
+                                                <button id="setTargetBtn" class="btn btn-dark w-100 text-start px-2 py-2">
+                                                    <i class="bi bi-crosshair me-2"></i>
+                                                    Set Target
+                                                </button>
+                                            </div>
+                                            <div class="col">
+                                                <button id="executeAttackBtn" class="btn btn-dark w-100 text-start px-2 py-2">
+                                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                                    Execute Attack
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                   
+                    <!-- Command Results will be appended here -->
+                    <div id="commandResults" class="mt-4">
+                        <h5>Command Results</h5>
+                        <div id="commandOutput" class="terminal">
+                            <!-- Command results will be appended here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Web Shell -->
+    <div class="terminal-overlay">
+        <div class="terminal-header">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-terminal me-2"></i>
+                Web Shell
+            </div>
+            <button class="btn btn-link text-light p-0" onclick="toggleTerminal()">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div id="terminal" class="terminal-content"></div>
+        <div class="terminal-input-container">
+            <span class="terminal-prompt">></span>
+            <input type="text" class="terminal-input" id="terminalInput" placeholder="Type a command..." autocomplete="off">
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirmationModal" class="confirmationModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Start Attack</h5>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to start this attack?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" onclick="closeConfirmationModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmAttack()">Start</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Drawer -->
+    <div class="settings-drawer" id="settingsDrawer">
+        <div class="drawer-title">
+            <span>Attack Parameters</span>
+            <button class="btn-close" onclick="toggleSettings()">
+                <i class="bi bi-x fs-4"></i>
+            </button>
+        </div>
+        <form id="settingsForm">
+            <div class="form-group">
+                <label class="form-label">
+                    <i class="bi bi-clock me-2"></i>
+                    Cycle Delay (ms)
+                </label>
+                <input type="number" class="form-control" id="cycleDelay" name="cycle_delay" value="2000">
+                <div class="form-text">Delay between scan/deauth cycles</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <i class="bi bi-search me-2"></i>
+                    Scan Time (ms)
+                </label>
+                <input type="number" class="form-control" id="scanTime" name="scan_time" value="5000">
+                <div class="form-text">Duration of WiFi scans</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <i class="bi bi-layers me-2"></i>
+                    Number of Frames
+                </label>
+                <input type="number" class="form-control" id="numFrames" name="num_frames" value="3">
+                <div class="form-text">Number of frames sent per AP</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <i class="bi bi-broadcast me-2"></i>
+                    Start Channel
+                </label>
+                <select class="form-select" id="startChannel" name="start_channel">
+                    <option value="1">1 (2.4 GHz)</option>
+                    <option value="36">36 (5 GHz)</option>
+                </select>
+                <div class="form-text">Start channel for scanning</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <i class="bi bi-arrow-repeat me-2"></i>
+                    Scan Cycles
+                </label>
+                <select class="form-select" id="scanCycles" name="scan_cycles">
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                </select>
+                <div class="form-text">Enable or disable scan between attack cycles</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <i class="bi bi-lightbulb me-2"></i>
+                    LED Status
+                </label>
+                <select class="form-select" id="ledStatus" name="led">
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                </select>
+                <div class="form-text">Enable or disable LEDs</div>
+            </div>
+            
+            <button type="button" class="btn btn-save" onclick="saveParameters()">
+                <i class="bi bi-check2 me-2"></i>Apply Parameters
+            </button>
+        </form>
+    </div>
+
+    <div id="sniffingIndicator" class="d-none">
+        <div class="hex-pattern"></div>
+        <div class="scan-line"></div>
+        <div class="attack-content">
+            <div class="attack-icon">
+                <i class="bi bi-wifi"></i>
+            </div>
+            <div class="attack-text">
+                <span id="sniffModeText">Sniffing Mode</span>
+            </div>
+        </div>
+        <div class="status-indicator"></div>
+        <div class="data-stream"></div>
+    </div>
+
+    <div class="offcanvas offcanvas-end bg-dark text-light" tabindex="-1" id="attackParameters" aria-labelledby="attackParametersLabel">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="attackParametersLabel">Attack Parameters</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+    </div>
+
+    <div id="rbbtModal" class="rbbtmodal">
+        <div class="modal-content">
+          <span class="close">&times;</span>
+          <img src="/static/rbbt.PNG" alt="badbunny">
+        </div>
+      </div>
+
+    <script src="/static/bootstrap.bundle.min.js"></script>
+    <script src="/static/socket.io.min.js"></script>
+    <script src="/static/script.js"></script>
+</body>
+</html>

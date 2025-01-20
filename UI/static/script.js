@@ -1284,7 +1284,7 @@ function displayNetworks(networks) {
             const channelType = channelNum > 14 ? 'channel-5ghz' : 'channel-2ghz';
             return `<div class="channel-bar ${channelType}" style="height: ${height}%" title="Channel ${channel}: ${count} networks"></div>`;
         })
-        .join('");
+        .join('');
 
     scanResults.innerHTML = `
         <div class="card mb-3">

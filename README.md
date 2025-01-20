@@ -1,4 +1,6 @@
 <div align="center">
+
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![GitHub issues](https://img.shields.io/github/issues/Evil-Project-Team/Evil-BW16-WebUI) ![GitHub stars](https://img.shields.io/github/stars/Evil-Project-Team/Evil-BW16-WebUI?style=social) ![GitHub forks](https://img.shields.io/github/forks/Evil-Project-Team/Evil-BW16-WebUI?style=social)
   
 # Evil-BW16 WebUI 🚀
 

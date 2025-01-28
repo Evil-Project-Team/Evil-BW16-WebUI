@@ -722,8 +722,8 @@ void printScanResults() {
   String tableHeader = "[INFO] Index\tSSID\t\tBSSID\t\tChannel\tRSSI (dBm)\tFrequency\n";
   sendResponse(tableHeader);
   
-  // Send results in batches of 3
-  const int batchSize = 3;
+  // Revert batch size to 2
+  const int batchSize = 2;
   for (size_t i = 0; i < scan_results.size(); i += batchSize) {
     String batchData = "";
     for (size_t j = i; j < i + batchSize && j < scan_results.size(); j++) {
@@ -734,9 +734,11 @@ void printScanResults() {
                   String(scan_results[j].rssi) + "\t" + freq + "\n";
     }
     sendResponse(batchData);
-    delay(100); // Small delay between batches
+    delay(300); // Small delay between batches
   }
   
+  // Ensure all data is printed before indicating completion
+  delay(1000); // Additional delay to ensure all data is sent
   sendResponse("[INFO] Scan results printed.");
 }
 

@@ -158,7 +158,7 @@ A powerful WiFi deauthentication tool running on BW16 and ESP32 platforms, featu
 
 ## Advanced Configuration ⚙️
 
-Configuration is primarily handled in **ESP32_WEBUI.ino** through hardcoded constants.
+Configuration is primarily handled in **ESP32.ino** through hardcoded constants.
 
 ```cpp
 // Access Point Credentials

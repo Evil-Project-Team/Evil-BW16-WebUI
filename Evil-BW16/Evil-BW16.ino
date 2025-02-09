@@ -165,7 +165,7 @@ static inline uint8_t ieee80211_get_subtype(uint16_t fc) {
 }
 
 // ************************************************************
-// * Updated sendResponse() with chunk-based UART transmission *
+// * Updated sendResponse() with newline-enforced messages *
 // ************************************************************
 // Define UART buffer size and chunk size
 #define UART_CHUNK_SIZE 256
@@ -187,33 +187,36 @@ void sendResponse(const String& response) {
     if (response.length() == 0) {
         return;
     }
-
+    
+    // Create a mutable copy of the response and ensure it ends with '\n'
+    String msg = response;
+    if (!msg.endsWith("\n")) {
+        msg += "\n";
+    }
+    
     // Determine if the message should be sent
-    bool shouldSend = response.startsWith("[INFO]") || response.startsWith("[ERROR]") || (DEBUG_MODE && response.startsWith("[DEBUG]"));
-
+    bool shouldSend = msg.startsWith("[INFO]") || msg.startsWith("[ERROR]") || (DEBUG_MODE && msg.startsWith("[DEBUG]"));
     if (!shouldSend) {
         return;
     }
 
-    // Log the response to USB serial for debugging
+    // Log the response to USB serial for debugging if enabled
     if (DEBUG_MODE) {
-        Serial.println("[DEBUG] Full Response: " + response);
+        Serial.print("[DEBUG] Full Response: ");
+        Serial.print(msg);
     }
 
-    // Send complete message over USB
-    Serial.println(response);
+    // Send complete message over USB Serial using print (since msg already contains a newline)
+    Serial.print(msg);
 
-    // Preserve existing UART logic
+    // Preserve existing UART logic with rate limiting
     unsigned long currentTime = millis();
     if (currentTime - lastUARTSend < UART_MIN_INTERVAL) {
         delay(UART_MIN_INTERVAL - (currentTime - lastUARTSend));
     }
-
-    // Send complete message over UART
-    Serial1.println(response);
+    // Send complete message over UART Serial using print
+    Serial1.print(msg);
     Serial1.flush();
-
-    // Update last send time
     lastUARTSend = millis();
 }
 
@@ -1096,7 +1099,6 @@ void handleCommand(String command) {
           sendResponse("[INFO] Debug mode disabled.");
         }
         else {
-          sendResponse("[ERROR] Invalid value for debug. Use 'set debug on' or 'set debug off'.");
           sendResponse("[ERROR] Invalid value for debug. Use 'set debug true' or 'set debug false'.");
         }
       }

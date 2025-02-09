@@ -13,7 +13,7 @@ A powerful WiFi deauthentication tool running on BW16 and ESP32 platforms, featu
 - ⚡ **Dual-band** 2.4GHz/5GHz support  
 - 🌐 **Web-based** control interface  
 - 🔧 **Real-time** UART communication  
-- 💡 **Dual UART** bridge functionality  
+- 💡 **UART Bridge** bridge functionality  
 - 💾 **SD card** file management  
 - 🔗 **WebSocket**-based communication  
 - 📁 **JSON** configuration handling  
@@ -52,7 +52,7 @@ A powerful WiFi deauthentication tool running on BW16 and ESP32 platforms, featu
 - **Real-Time Monitoring**: View network activity and attack status in real-time.
 - **Customizable Attacks**: Configure attack parameters and targets.
 - **SD Card Storage**: Save logs and configurations to SD card.
-- **Dual UART Bridge**: Communicate with multiple devices simultaneously.
+- **UART Bridge**: Read UART from UART or Serial USB.
 - **Advanced Packet Injection**: Precise control over frame timing and content.
 - **Channel Hopping**: Automatic channel switching for comprehensive coverage.
 - **MAC Address Filtering**: Target specific devices or networks.
@@ -74,7 +74,6 @@ A powerful WiFi deauthentication tool running on BW16 and ESP32 platforms, featu
 - **ESP32** development board (ESP32-S3 recommended)  
 - **MicroSD card module** (SPI interface)  
 - **Power supply** (5V/3.3V, 2A minimum)  
-- *Optional:* OLED display (SSD1306 128x64)  
 - *Optional:* External battery pack (18650 Li-ion recommended)
 
 ---

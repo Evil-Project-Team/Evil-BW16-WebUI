@@ -86,7 +86,7 @@ bool g_usbMode = true;
 // In USB mode we leave the USB CDC active.
 // We still install the minimal UART2 driver (for bridging or future use).
 bool ensureUART2Driver() {
-  esp_err_t err = uart_driver_install(UART_NUM_2, 2048, 2048, 20, &uart_queue_2, 0);
+  esp_err_t err = uart_driver_install((uart_port_t)UART_NUM_2, 2048, 2048, 20, &uart_queue_2, 0);
   if (err == ESP_OK) {
       Serial.println("[DEBUG] UART2 driver installed (minimal).");
       return true;
@@ -157,11 +157,11 @@ int process_bridge_direction(int dst_uart, char* buffer, size_t *buf_len) {
   }
 
   int bytesToSend = batchEnd;
-  esp_err_t write_err = uart_write_bytes(dst_uart, buffer, bytesToSend);
+  esp_err_t write_err = uart_write_bytes((uart_port_t)dst_uart, buffer, bytesToSend);
   if (write_err != ESP_OK) {
     Serial.printf("[ERROR] Failed to write batch to UART %d: %d\n", dst_uart, write_err);
   }
-  uart_wait_tx_done(dst_uart, 100 / portTICK_PERIOD_MS);
+  uart_wait_tx_done((uart_port_t)dst_uart, 100 / portTICK_PERIOD_MS);
 
   int remaining = len - batchEnd;
   memmove(buffer, buffer + batchEnd, remaining);
@@ -396,7 +396,7 @@ bool setupUART2() {
   Serial.println("[DEBUG] Chip model validation successful.");
   
   Serial.println("[DEBUG] Configuring UART2 pins...");
-  uart_set_pin(UART_NUM_2, UART_TX_PIN_2, UART_RX_PIN_2, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+  uart_set_pin((uart_port_t)UART_NUM_2, UART_TX_PIN_2, UART_RX_PIN_2, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
   Serial.println("[DEBUG] UART2 pins configured.");
   
   if (UART_NUM_2 >= UART_NUM_MAX) {
@@ -433,7 +433,7 @@ bool setupUART2() {
     .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
     .source_clk = UART_SCLK_APB,
   };
-  esp_err_t err = uart_param_config(UART_NUM_2, &uart_config_2);
+  esp_err_t err = uart_param_config((uart_port_t)UART_NUM_2, &uart_config_2);
   if (err != ESP_OK) {
     Serial.printf("[UART2 CRITICAL] Config failed: 0x%x\n", err);
     return false;
@@ -442,7 +442,7 @@ bool setupUART2() {
   Serial.println("[DEBUG] UART2 parameter configuration successful");
   
   Serial.println("[DEBUG] Setting UART2 pins again...");
-  err = uart_set_pin(UART_NUM_2, UART_TX_PIN_2, UART_RX_PIN_2, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+  err = uart_set_pin((uart_port_t)UART_NUM_2, UART_TX_PIN_2, UART_RX_PIN_2, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
   if (err != ESP_OK) {
     Serial.printf("[ERROR] UART2 pin configuration failed: %d\n", err);
     return false;
@@ -450,7 +450,7 @@ bool setupUART2() {
   Serial.println("[DEBUG] UART2 pin configuration successful");
   
   Serial.println("[DEBUG] Installing UART2 driver...");
-  err = uart_driver_install(UART_NUM_2, 2048, 2048, 20, &uart_queue_2, 0);
+  err = uart_driver_install((uart_port_t)UART_NUM_2, 2048, 2048, 20, &uart_queue_2, 0);
   if (err != ESP_OK) {
     Serial.printf("[ERROR] UART2 driver installation failed: %d\n", err);
     return false;
@@ -498,8 +498,8 @@ void uart_bridge_task(void* pvParameters) {
     
     // From UART2 to UART1
     size_t available2 = 0;
-    if (uart_get_buffered_data_len(UART_NUM_2, &available2) == ESP_OK && available2 > 0) {
-      int read_len = uart_read_bytes(UART_NUM_2, (uint8_t*)temp, min(available2, (size_t)(TEMP_BUFFER_SIZE - 1)), UART_TIMEOUT);
+    if (uart_get_buffered_data_len((uart_port_t)UART_NUM_2, &available2) == ESP_OK && available2 > 0) {
+      int read_len = uart_read_bytes((uart_port_t)UART_NUM_2, (uint8_t*)temp, min(available2, (size_t)(TEMP_BUFFER_SIZE - 1)), UART_TIMEOUT);
       if (read_len > 0) {
         temp[read_len] = '\0';
         if (buffer2_len + read_len < LINE_BUFFER_SIZE) {
@@ -596,13 +596,13 @@ void uart_event_task_2(void* pvParameters) {
       switch (event.type) {
         case UART_DATA: {
           size_t length = 0;
-          esp_err_t err = uart_get_buffered_data_len(UART_NUM_2, &length);
+          esp_err_t err = uart_get_buffered_data_len((uart_port_t)UART_NUM_2, &length);
           if (err != ESP_OK) {
             Serial.printf("[ERROR] Failed to get UART2 buffer length: %d\n", err);
             continue;
           }
           if (length > 0 && length < UART_BUFFER_SIZE) {
-            int read_length = uart_read_bytes(UART_NUM_2, dtmp, length, UART_TIMEOUT);
+            int read_length = uart_read_bytes((uart_port_t)UART_NUM_2, dtmp, length, UART_TIMEOUT);
             if (read_length > 0) {
               dtmp[read_length] = '\0';
               if (read_length < UART_BUFFER_SIZE) {
@@ -614,11 +614,11 @@ void uart_event_task_2(void* pvParameters) {
         }
         case UART_FIFO_OVF:
           Serial.println("[WARNING] UART2 FIFO Overflow - clearing FIFO");
-          uart_flush(UART_NUM_2);
+          uart_flush((uart_port_t)UART_NUM_2);
           break;
         case UART_BUFFER_FULL:
           Serial.println("[WARNING] UART2 Buffer Full - clearing buffer");
-          uart_flush(UART_NUM_2);
+          uart_flush((uart_port_t)UART_NUM_2);
           break;
         default:
           Serial.printf("[UART2 EVENT] Unhandled event type: %d\n", event.type);

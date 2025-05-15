@@ -392,14 +392,14 @@ void hopChannel() {
       size_t channelCount2GHz = sizeof(CHANNELS_2GHZ) / sizeof(CHANNELS_2GHZ[0]);
       if (use5GHz) {
         // Check if we exceed the available channels in the 5 GHz band
-        if ((int)currentChannelIndex >= channelCount5GHz) {
+        if (currentChannelIndex >= (int)channelCount5GHz) {
           currentChannelIndex = 0;
           use5GHz = false; // Switch to the 2.4 GHz band
         }
         currentChannel = CHANNELS_5GHZ[currentChannelIndex];
       } else {
         // Check if we exceed the available channels in the 2.4 GHz band
-        if ((int)currentChannelIndex >= channelCount2GHz) {
+        if (currentChannelIndex >= (int)channelCount2GHz) {
           currentChannelIndex = 0;
           use5GHz = true; // Switch to the 5 GHz band
         }
@@ -856,7 +856,7 @@ void handleCommand(String command) {
       size_t idx = random(0, scan_results.size());
       uint8_t randChannel = scan_results[idx].channel;
       wifi_set_channel(randChannel);
-      for (int j = 0; j < num_send_frames; j++) {
+      for (unsigned long j = 0; j < num_send_frames; j++) {
         wifi_tx_deauth_frame(scan_results[idx].bssid, dst_mac, 2);
         if (USE_LED) {
           digitalWrite(LED_B, HIGH);
@@ -1066,7 +1066,7 @@ void handleCommand(String command) {
         }
 
         // Last index
-        if (start < value.length()) {
+        if (start < (int)value.length()) {
           String index_str = value.substring(start);
           int target_index = index_str.toInt();
           if (target_index >= 0 && target_index < (int)scan_results.size()) {
@@ -1198,7 +1198,7 @@ void targetAttack() {
     sendResponse("[INFO] Targeted attack started.");
     for (size_t i = 0; i < target_aps.size(); i++) {
       wifi_set_channel(target_aps[i].channel);
-      for (int j = 0; j < num_send_frames; j++) {
+      for (unsigned long j = 0; j < num_send_frames; j++) {
         wifi_tx_deauth_frame(target_aps[i].bssid, dst_mac, 2);
         if (USE_LED) {
           digitalWrite(LED_B, HIGH);
@@ -1233,7 +1233,7 @@ void attackCycle() {
       currentChannel = targetChannel;
     }
 
-    for (int j = 0; j < num_send_frames; j++) {
+    for (unsigned long j = 0; j < num_send_frames; j++) {
       wifi_tx_deauth_frame(scan_results[i].bssid, dst_mac, 2);
       if (USE_LED) {
         digitalWrite(LED_B, HIGH);
@@ -1362,7 +1362,7 @@ void loop() {
     for(size_t i = 0; i < aps_to_attack.size(); i++) {
       wifi_set_channel(aps_to_attack[i].channel);
 
-      for(int j = 0; j < num_send_frames; j++) {
+      for(unsigned long j = 0; j < num_send_frames; j++) {
         // Reason code 8 => Disassociated because station left
         wifi_tx_disassoc_frame(aps_to_attack[i].bssid, dst_mac, 0x08); 
 

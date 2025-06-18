@@ -54,6 +54,7 @@
 
 bool USE_LED = true;
 bool DEBUG_MODE = false;  // Debug mode flag
+bool HIDDEN_AP = false;   // Set to true for hidden AP, false for visible AP
 
 // Attack parameters
 unsigned long last_cycle     = 0;
@@ -1282,15 +1283,27 @@ void setup() {
     digitalWrite(LED_R, LOW); digitalWrite(LED_G, LOW); digitalWrite(LED_B, LOW);
   }
 
-  sendResponse("[INFO] Initializing WiFi in hidden AP mode...");
-  wifi_on(RTW_MODE_AP);
-  wifi_start_ap_with_hidden_ssid(WIFI_SSID,
-                                 RTW_SECURITY_WPA2_AES_PSK,
-                                 WIFI_PASS,
-                                 11,   // keyID
-                                 18,   // SSID length
-                                 WIFI_CHANNEL);
-  sendResponse("[INFO] Hidden AP started. Selected channel: " + String(WIFI_CHANNEL));
+  if (HIDDEN_AP) {
+    sendResponse("[INFO] Initializing WiFi in hidden AP mode...");
+    wifi_on(RTW_MODE_AP);
+    wifi_start_ap_with_hidden_ssid(WIFI_SSID,
+                                   RTW_SECURITY_WPA2_AES_PSK,
+                                   WIFI_PASS,
+                                   11,   // keyID
+                                   18,   // SSID length
+                                   WIFI_CHANNEL);
+    sendResponse("[INFO] Hidden AP started. Selected channel: " + String(WIFI_CHANNEL));
+  } else {
+    sendResponse("[INFO] Initializing WiFi in visible AP mode...");
+    wifi_on(RTW_MODE_AP);
+    wifi_start_ap(WIFI_SSID,
+                  RTW_SECURITY_WPA2_AES_PSK,
+                  WIFI_PASS,
+                  strlen(WIFI_SSID),
+                  strlen(WIFI_PASS),
+                  WIFI_CHANNEL);
+    sendResponse("[INFO] Visible AP started. Selected channel: " + String(WIFI_CHANNEL));
+  }
 
   last_cycle = millis();
 }

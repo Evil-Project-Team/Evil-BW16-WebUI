@@ -29,6 +29,15 @@
    regarding network testing and ethical hacking.
 */
 
+#define NOMINMAX  // Prevent Windows min/max macros from interfering with STL
+#include <vector>
+#include <Arduino.h>
+#include "wifi_conf.h"
+#include "wifi_util.h"
+#include "wifi_structures.h"
+#include "WiFi.h"
+#include "platform_stdlib.h"
+
 // Undefine any existing min/max macros to prevent conflicts
 #ifdef min
 #undef min
@@ -36,14 +45,6 @@
 #ifdef max
 #undef max
 #endif
-
-#include <Arduino.h>
-#include <vector>
-#include "wifi_conf.h"
-#include "wifi_util.h"
-#include "wifi_structures.h"
-#include "WiFi.h"
-#include "platform_stdlib.h"
 
 //==========================
 // User Configuration

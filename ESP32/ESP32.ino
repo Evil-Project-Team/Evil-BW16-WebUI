@@ -68,6 +68,7 @@ void uart_bridge_task(void* pvParameters);
 
 // Helper function for token/message processing:
 int process_bridge_direction(int dst_uart, char* buffer, size_t *buf_len);
+bool shouldForwardMessage(const char* message);
 
 // *****************************************************************************
 //                         Global Instances and Handles
@@ -105,6 +106,33 @@ void switchUart2Mode() {
 }
 
 // *****************************************************************************
+//             Message Filtering Function
+// *********************************************************************************
+// Function to determine if a message should be forwarded
+bool shouldForwardMessage(const char* message) {
+  if (!message || strlen(message) == 0) return false;
+  
+  // Don't forward specific log message types, but allow WebSocket and other legitimate messages
+  if (strncmp(message, "[INFO]", 6) == 0 || strncmp(message, "[DEBUG]", 7) == 0 || 
+      strncmp(message, "[ERROR]", 7) == 0 || strncmp(message, "[CMD]", 5) == 0 ||
+      strncmp(message, "[MGMT]", 6) == 0 || strncmp(message, "[DATA]", 6) == 0 ||
+      strncmp(message, "[HOP]", 5) == 0 || strncmp(message, "[RANDOM", 7) == 0 ||
+      strncmp(message, "[WARNING]", 9) == 0 || strncmp(message, "[UART", 5) == 0 ||
+      strncmp(message, "[WEB]", 5) == 0 || strncmp(message, "[SD]", 4) == 0) {
+    return false;
+  }
+  
+  // Don't forward common logging patterns
+  if (strstr(message, "log") || strstr(message, "Log") || 
+      strstr(message, "timestamp") || strstr(message, "Timestamp") ||
+      strstr(message, "received") || strstr(message, "Received") ||
+      strstr(message, "sent") || strstr(message, "Sent")) {
+    return false;
+  }
+  
+  return true;
+}
+
 //             Token-Based Message Processing Helper Function
 // *********************************************************************************
 int process_bridge_direction(int dst_uart, char* buffer, size_t *buf_len) {
@@ -156,12 +184,21 @@ int process_bridge_direction(int dst_uart, char* buffer, size_t *buf_len) {
     }
   }
 
-  int bytesToSend = batchEnd;
-  esp_err_t write_err = uart_write_bytes((uart_port_t)dst_uart, buffer, bytesToSend);
-  if (write_err != ESP_OK) {
-    Serial.printf("[ERROR] Failed to write batch to UART %d: %d\n", dst_uart, write_err);
+  // Check if the message should be forwarded before sending
+  char tempBuffer[batchEnd + 1];
+  memcpy(tempBuffer, buffer, batchEnd);
+  tempBuffer[batchEnd] = '\0';
+  
+  if (shouldForwardMessage(tempBuffer)) {
+    int bytesToSend = batchEnd;
+    esp_err_t write_err = uart_write_bytes((uart_port_t)dst_uart, buffer, bytesToSend);
+    if (write_err != ESP_OK) {
+      Serial.printf("[ERROR] Failed to write batch to UART %d: %d\n", dst_uart, write_err);
+    }
+    uart_wait_tx_done((uart_port_t)dst_uart, 100 / portTICK_PERIOD_MS);
+  } else {
+    Serial.printf("[DEBUG] Filtered out message from UART bridge: %.50s...\n", tempBuffer);
   }
-  uart_wait_tx_done((uart_port_t)dst_uart, 100 / portTICK_PERIOD_MS);
 
   int remaining = len - batchEnd;
   memmove(buffer, buffer + batchEnd, remaining);
@@ -232,11 +269,59 @@ void logSDCardFiles(const char* dirname, uint8_t levels) {
   }
 }
 
+// Command validation function to prevent sending log messages as commands
+bool isValidCommand(const char* command) {
+  if (!command || strlen(command) == 0) return false;
+  
+  // Filter out specific log message types, but allow WebSocket and other legitimate messages
+  if (strncmp(command, "[INFO]", 6) == 0 || strncmp(command, "[DEBUG]", 7) == 0 || 
+      strncmp(command, "[ERROR]", 7) == 0 || strncmp(command, "[CMD]", 5) == 0 ||
+      strncmp(command, "[MGMT]", 6) == 0 || strncmp(command, "[DATA]", 6) == 0 ||
+      strncmp(command, "[HOP]", 5) == 0 || strncmp(command, "[RANDOM", 7) == 0 ||
+      strncmp(command, "[WARNING]", 9) == 0 || strncmp(command, "[UART", 5) == 0 ||
+      strncmp(command, "[WEB]", 5) == 0 || strncmp(command, "[SD]", 4) == 0) {
+    return false;
+  }
+  
+  // Filter out common log patterns
+  if (strstr(command, "log") || strstr(command, "Log") || 
+      strstr(command, "timestamp") || strstr(command, "Timestamp") ||
+      strstr(command, "received") || strstr(command, "Received") ||
+      strstr(command, "sent") || strstr(command, "Sent")) {
+    return false;
+  }
+  
+  // List of valid command prefixes
+  const char* validCommands[] = {
+    "start deauther", "stop deauther", "scan", "results", "disassoc",
+    "random_attack", "attack_time", "start sniff", "sniff beacon", 
+    "sniff probe", "sniff deauth", "sniff eapol", "sniff pwnagotchi",
+    "sniff all", "stop sniff", "hop on", "hop off", "set ch", "set ",
+    "info", "help", "toggle_debug", "debug on", "debug off", "status"
+  };
+  
+  // Check if command starts with any valid command
+  for (const char* validCmd : validCommands) {
+    if (strncmp(command, validCmd, strlen(validCmd)) == 0) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 bool sendUARTCommand(const char* command) {
   if (!command || strlen(command) == 0) {
     Serial.println("[ERROR] Cannot send empty command via UART");
     return false;
   }
+  
+  // Validate command before sending
+  if (!isValidCommand(command)) {
+    Serial.printf("[DEBUG] Ignoring invalid command: %s\n", command);
+    return false;
+  }
+  
   size_t length = strlen(command);
   if (length >= UART_BUFFER_SIZE) {
     Serial.println("[ERROR] UART command too long");
@@ -311,6 +396,15 @@ void onWsEvent(AsyncWebSocket* server,
         if (strcmp(action, "connect") == 0) {
           client->text("{\"type\":\"command_status\",\"success\":true,\"message\":\"Already connected.\"}");
         } else if (strcmp(action, "send_command") == 0) {
+          // Rate limit command sending
+          static unsigned long lastCommandTime = 0;
+          unsigned long currentTime = millis();
+          if (currentTime - lastCommandTime < 100) { // Minimum 100ms between commands
+            client->text("{\"type\":\"command_status\",\"success\":false,\"message\":\"Rate limited - please wait.\"}");
+            return;
+          }
+          lastCommandTime = currentTime;
+          
           const char* command = doc["command"];
           if (sendUARTCommand(command)) {
             client->text("{\"type\":\"command_status\",\"success\":true,\"message\":\"Command sent.\"}");
@@ -635,16 +729,49 @@ void uart_event_task_2(void* pvParameters) {
 //                           Web Server Setup
 // *****************************************************************************
 void setupWebServer() {
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-    request->send(SD, "/index.html", "text/html");
-  });
-  AsyncStaticWebHandler* staticHandler = new AsyncStaticWebHandler("/static/", SD, "/static/", "max-age=600");
-  staticHandler->setDefaultFile("index.html");
-  server.addHandler(staticHandler);
+  // Check if SD card is available
+  bool sdAvailable = (SD.cardType() != CARD_NONE);
+  
+  if (sdAvailable) {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+      request->send(SD, "/index.html", "text/html");
+    });
+    AsyncStaticWebHandler* staticHandler = new AsyncStaticWebHandler("/static/", SD, "/static/", "max-age=600");
+    staticHandler->setDefaultFile("index.html");
+    server.addHandler(staticHandler);
+  } else {
+    // Serve basic HTML when SD card is not available
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+      String html = "<!DOCTYPE html><html><head><title>Evil-BW16 Controller</title></head><body>";
+      html += "<h1>Evil-BW16 Controller</h1>";
+      html += "<p>SD Card not available - Basic interface only</p>";
+      html += "<div id='status'>Disconnected</div>";
+      html += "<input type='text' id='command' placeholder='Enter command'>";
+      html += "<button onclick='sendCommand()'>Send</button>";
+      html += "<div id='output'></div>";
+      html += "<script>";
+      html += "const ws = new WebSocket('ws://' + window.location.host + '/ws');";
+      html += "ws.onopen = () => document.getElementById('status').textContent = 'Connected';";
+      html += "ws.onclose = () => document.getElementById('status').textContent = 'Disconnected';";
+      html += "ws.onmessage = (e) => { const data = JSON.parse(e.data); if(data.type === 'serial_data') { document.getElementById('output').innerHTML += '<div>' + data.message + '</div>'; } };";
+      html += "function sendCommand() { const cmd = document.getElementById('command').value; ws.send(JSON.stringify({action: 'send_command', command: cmd})); document.getElementById('command').value = ''; }";
+      html += "document.getElementById('command').addEventListener('keypress', (e) => { if(e.key === 'Enter') sendCommand(); });";
+      html += "</script></body></html>";
+      request->send(200, "text/html", html);
+    });
+  }
   server.onNotFound([](AsyncWebServerRequest* request) {
     if (request->method() == HTTP_GET) {
       String path = request->url();
       Serial.printf("[WEB] Handling request for: %s\n", path.c_str());
+      
+      // Check if SD card is available
+      if (SD.cardType() == CARD_NONE) {
+        Serial.printf("[WEB] SD card not available for: %s\n", path.c_str());
+        request->send(404, "text/plain", "SD card not available");
+        return;
+      }
+      
       if (path.endsWith("/")) path += "index.html";
       if (!SD.exists(path)) {
         Serial.printf("[WEB] File not found: %s\n", path.c_str());
@@ -676,21 +803,53 @@ void setupWebServer() {
 // *****************************************************************************
 void setup() {
   Serial.begin(115200);
-  delay(100);  // Brief delay for Serial initialization
+  delay(1000);  // Longer delay for Serial initialization
+  
+  Serial.println("\n=== Evil-BW16 ESP32 Controller Starting ===");
+  Serial.printf("Chip Model: %s\n", ESP.getChipModel());
+  Serial.printf("Chip Revision: %d\n", ESP.getChipRevision());
+  Serial.printf("CPU Frequency: %d MHz\n", ESP.getCpuFreqMHz());
+  Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+  Serial.println("==========================================\n");
 
+  // Try different SD card initialization methods
+  Serial.println("[INFO] Attempting SD card initialization...");
+  
+  // Method 1: Default pins
   if (!SD.begin()) {
-    Serial.println("[ERROR] SD Card Mount Failed");
-    return;
+    Serial.println("[WARNING] SD Card Mount Failed with default pins, trying explicit pins...");
+    
+    // Method 2: Explicit pins (common ESP32-S3 configuration)
+    if (!SD.begin(5)) { // Try CS pin 5
+      Serial.println("[WARNING] SD Card Mount Failed with CS=5, trying CS=10...");
+      
+      // Method 3: Try CS pin 10
+      if (!SD.begin(10)) {
+        Serial.println("[ERROR] SD Card Mount Failed with all methods");
+        Serial.println("[INFO] Continuing without SD card - web server will be limited");
+        // Don't return - continue without SD card
+      } else {
+        Serial.println("[INFO] SD Card mounted successfully with CS=10");
+      }
+    } else {
+      Serial.println("[INFO] SD Card mounted successfully with CS=5");
+    }
+  } else {
+    Serial.println("[INFO] SD Card mounted successfully with default settings");
   }
+  // Check if SD card is properly mounted
+  bool sdCardAvailable = false;
   uint8_t cardType = SD.cardType();
   if (cardType == CARD_NONE) {
-    Serial.println("[ERROR] No SD card attached");
-    return;
+    Serial.println("[WARNING] No SD card attached - web interface will serve basic content only");
+    sdCardAvailable = false;
+  } else {
+    Serial.printf("[INFO] SD Card initialized. Type: %d, Size: %.2f MB\n", cardType, SD.cardSize() / (1024.0 * 1024.0));
+    Serial.println("Listing all files on SD card:");
+    String fileList = getSDFileList("/");
+    Serial.println(fileList);
+    sdCardAvailable = true;
   }
-  Serial.printf("[INFO] SD Card initialized. Type: %d, Size: %.2f MB\n", cardType, SD.cardSize() / (1024.0 * 1024.0));
-  Serial.println("Listing all files on SD card:");
-  String fileList = getSDFileList("/");
-  Serial.println(fileList);
   
   if (!setupUART()) {
     Serial.println("[ERROR] Failed to setup UART1");

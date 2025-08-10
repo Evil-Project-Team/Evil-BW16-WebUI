@@ -747,13 +747,68 @@ void checkTimedAttack() {
 }
 
 //==========================================================
+// Command Validation
+//==========================================================
+bool isValidCommand(const String& command) {
+  // List of valid command prefixes
+  const String validCommands[] = {
+    "start deauther", "stop deauther", "scan", "results", "disassoc",
+    "random_attack", "attack_time", "start sniff", "sniff beacon", 
+    "sniff probe", "sniff deauth", "sniff eapol", "sniff pwnagotchi",
+    "sniff all", "stop sniff", "hop on", "hop off", "set ch", "set ",
+    "info", "help", "toggle_debug", "debug on", "debug off", "status"
+  };
+  
+  // Check if command starts with any valid command
+  for (const String& validCmd : validCommands) {
+    if (command.startsWith(validCmd)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+//==========================================================
 // Handle Incoming Commands
 //==========================================================
 void handleCommand(String command) {
+  // Rate limit command processing to prevent flooding
+  static unsigned long lastCommandTime = 0;
+  unsigned long currentTime = millis();
+  if (currentTime - lastCommandTime < 100) { // Minimum 100ms between commands
+    return;
+  }
+  lastCommandTime = currentTime;
+
   command.trim();
 
-  // Filter out lines that start with '[INFO]', '[DEBUG]', or '[ERROR]' to prevent responses from being processed as commands
-  if (command.startsWith("[INFO]") || command.startsWith("[DEBUG]") || command.startsWith("[ERROR]")) {
+  // Filter out specific log message types, but NOT WebSocket or other legitimate bracketed content
+  if (command.startsWith("[INFO]") || command.startsWith("[DEBUG]") || command.startsWith("[ERROR]") || 
+      command.startsWith("[CMD]") || command.startsWith("[MGMT]") || command.startsWith("[DATA]") || 
+      command.startsWith("[HOP]") || command.startsWith("[RANDOM") || command.startsWith("[WARNING]") ||
+      command.startsWith("[UART") || command.startsWith("[WEB]") || command.startsWith("[SD]")) {
+    return;
+  }
+
+  // Additional filtering to prevent empty or whitespace-only commands
+  if (command.length() == 0) {
+    return;
+  }
+
+  // Filter out common log patterns that might come from Flipper Zero
+  if (command.indexOf("log") != -1 || command.indexOf("Log") != -1 || 
+      command.indexOf("timestamp") != -1 || command.indexOf("Timestamp") != -1 ||
+      command.indexOf("received") != -1 || command.indexOf("Received") != -1 ||
+      command.indexOf("sent") != -1 || command.indexOf("Sent") != -1) {
+    return;
+  }
+
+  // Validate that this looks like a legitimate command
+  if (!isValidCommand(command)) {
+    if (DEBUG_MODE) {
+      sendResponse("[DEBUG] Ignoring invalid command: " + command);
+    }
     return;
   }
 
@@ -1152,6 +1207,7 @@ void handleCommand(String command) {
     sendResponse("[INFO]      * debug on/off     : Enable or disable debug mode.");
     sendResponse("[INFO]      * debug true/false : Enable or disable debug mode.");
     sendResponse("[INFO]  - info                 : Display the current configuration.");
+    sendResponse("[INFO]  - status               : Display current system status.");
     sendResponse("[INFO]  - help                 : Display this help message.");
   }
   else if (command.equalsIgnoreCase("toggle_debug")) {
@@ -1165,6 +1221,15 @@ void handleCommand(String command) {
   else if (command.equalsIgnoreCase("debug off")) {
     DEBUG_MODE = false;
     sendResponse("[INFO] Debug mode disabled.");
+  }
+  else if (command.equalsIgnoreCase("status")) {
+    sendResponse("[INFO] Current Status:");
+    sendResponse("[INFO] - Attack Enabled: " + String(attack_enabled ? "Yes" : "No"));
+    sendResponse("[INFO] - Scan Between Cycles: " + String(scan_between_cycles ? "Yes" : "No"));
+    sendResponse("[INFO] - Debug Mode: " + String(DEBUG_MODE ? "Yes" : "No"));
+    sendResponse("[INFO] - Disassoc Enabled: " + String(disassoc_enabled ? "Yes" : "No"));
+    sendResponse("[INFO] - Is Sniffing: " + String(isSniffing ? "Yes" : "No"));
+    sendResponse("[INFO] - Is Hopping: " + String(isHopping ? "Yes" : "No"));
   }
   else {
     sendResponse("[ERROR] Unknown command. Type 'help' for a list of commands.");
@@ -1320,6 +1385,10 @@ void setup() {
   }
 
   last_cycle = millis();
+  
+  // Send ready message
+  sendResponse("[INFO] Evil-BW16 initialized and ready for commands.");
+  sendResponse("[INFO] Type 'help' for available commands.");
 }
 
 //==========================================================
@@ -1331,6 +1400,9 @@ void loop() {
     String command = Serial1.readStringUntil('\n');
     command.trim();
     if (command.length() > 0) {
+      if (DEBUG_MODE) {
+        sendResponse("[DEBUG] UART Command received: '" + command + "'");
+      }
       handleCommand(command);
     }
   }
@@ -1340,6 +1412,9 @@ void loop() {
     String command = Serial.readStringUntil('\n');
     command.trim();
     if (command.length() > 0) {
+      if (DEBUG_MODE) {
+        sendResponse("[DEBUG] USB Command received: '" + command + "'");
+      }
       sendResponse("[INFO] USB Command Received: " + command);
       handleCommand(command);
     }
@@ -1348,7 +1423,7 @@ void loop() {
   // Timed Attack check
   checkTimedAttack();
 
-  // Attack cycles
+  // Attack cycles - Only run if explicitly enabled
   if(millis() - last_cycle > cycle_delay) {
     if(attack_enabled) {
       // Optionally perform a scan between cycles
